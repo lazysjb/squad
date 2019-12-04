@@ -4,7 +4,7 @@ Author:
     Chris Chute (chute@stanford.edu)
 """
 
-import layers
+import layers_new
 import torch
 import torch.nn as nn
 
@@ -31,26 +31,26 @@ class BiDAF(nn.Module):
     """
     def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob=0.):
         super(BiDAF, self).__init__()
-        self.emb = layers.Embedding_Custom(word_vectors=word_vectors,
-                                           char_vectors=char_vectors,
-                                           hidden_size=hidden_size,
-                                           drop_prob=drop_prob)
+        self.emb = layers_new.Embedding_Custom(word_vectors=word_vectors,
+                                               char_vectors=char_vectors,
+                                               hidden_size=hidden_size,
+                                               drop_prob=drop_prob)
 
-        self.enc = layers.RNNEncoder(input_size=hidden_size,
-                                     hidden_size=hidden_size,
-                                     num_layers=1,
-                                     drop_prob=drop_prob)
-
-        self.att = layers.BiDAFAttention(hidden_size=2 * hidden_size,
+        self.enc = layers_new.RNNEncoder(input_size=hidden_size,
+                                         hidden_size=hidden_size,
+                                         num_layers=1,
                                          drop_prob=drop_prob)
 
-        self.mod = layers.RNNEncoder(input_size=8 * hidden_size,
-                                     hidden_size=hidden_size,
-                                     num_layers=2,
-                                     drop_prob=drop_prob)
+        self.att = layers_new.BiDAFAttention(hidden_size=2 * hidden_size,
+                                             drop_prob=drop_prob)
 
-        self.out = layers.BiDAFOutput(hidden_size=hidden_size,
-                                      drop_prob=drop_prob)
+        self.mod = layers_new.RNNEncoder(input_size=8 * hidden_size,
+                                         hidden_size=hidden_size,
+                                         num_layers=2,
+                                         drop_prob=drop_prob)
+
+        self.out = layers_new.BiDAFOutput(hidden_size=hidden_size,
+                                          drop_prob=drop_prob)
 
     def forward(self, cw_idxs, cc_idxs, qw_idxs, qc_idxs):
         c_mask = torch.zeros_like(cw_idxs) != cw_idxs
