@@ -39,6 +39,53 @@ class Embedding(nn.Module):
         return emb
 
 
+class Embedding_Custom(nn.Module):
+    """Embedding layer used by BiDAF, without the character-level component.
+
+    Word-level embeddings are further refined using a 2-layer Highway Encoder
+    (see `HighwayEncoder` class for details).
+
+    Args:
+        word_vectors (torch.Tensor): Pre-trained word vectors.
+        hidden_size (int): Size of hidden activations.
+        drop_prob (float): Probability of zero-ing out activations
+    """
+    def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob):
+        print('Using Custom Embedding Layer...')
+        super(Embedding_Custom, self).__init__()
+        self.drop_prob = drop_prob
+        self.word_embed = nn.Embedding.from_pretrained(word_vectors)
+        self.char_embed = nn.Embedding.from_pretrained(char_vectors, freeze=False)
+
+        cemb_dim = char_vectors.shape[1]
+        wemb_dim = word_vectors.shape[1]
+        self.conv2d = nn.Conv2d(cemb_dim, wemb_dim, kernel_size=(1, 5), padding=0, bias=True)
+        nn.init.kaiming_normal_(self.conv2d.weight, nonlinearity='relu')
+
+        # self.proj = nn.Linear(word_vectors.size(1), hidden_size, bias=False)
+        self.proj = nn.Linear(wemb_dim * 2, hidden_size)
+        self.hwy = HighwayEncoder(2, hidden_size)
+
+    def forward(self, word_idxes, char_idxes):
+        ch_emb = self.char_embed(char_idxes)    # (batch_size, seq_len, char_len, c_embed_size)
+        ch_emb = ch_emb.permute(0, 3, 1, 2)     # (batch_size, c_emb_size, seq_len, char_len)
+        ch_emb = F.dropout(ch_emb, p=self.drop_prob, training=self.training)
+        ch_emb = self.conv2d(ch_emb)            # (batch_size, w_emb_size, seq_len, char_len - 4)
+        ch_emb = F.relu(ch_emb)
+        ch_emb, _ = torch.max(ch_emb, dim=3)    # (batch_size, w_emb_size, seq_len
+
+        w_emb = self.word_embed(word_idxes)     # (batch_size, seq_len, w_emb_size)
+        w_emb = w_emb.transpose(1, 2)           # (batch_size, w_emb_size, seq_len)
+        w_emb = F.dropout(w_emb, p=self.drop_prob, training=self.training)
+        emb = torch.cat([ch_emb, w_emb], dim=1)     # (batch_size, w_emb_size * 2, seq_len)
+        emb = emb.permute(0, 2, 1)              # (batch_size, seq_len, w_emb_size * 2)
+
+        emb = self.proj(emb)  # (batch_size, seq_len, hidden_size)
+        emb = self.hwy(emb)   # (batch_size, seq_len, hidden_size)
+
+        return emb
+
+
 class HighwayEncoder(nn.Module):
     """Encode an input sequence using a highway network.
 

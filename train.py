@@ -3,7 +3,7 @@
 Author:
     Chris Chute (chute@stanford.edu)
 """
-
+import json
 import numpy as np
 import random
 import torch
@@ -44,9 +44,23 @@ def main(args):
     log.info('Loading embeddings...')
     word_vectors = util.torch_from_json(args.word_emb_file)
 
+    # Random init char embeddings - same dimension as word vectors
+    char2idx = json.load(open('./data/char2idx.json', 'r'))
+    char_vocab_size = len(char2idx)
+    print('vocab size for characters is {} ...'.format(char_vocab_size))
+    char_emb_dim = word_vectors.size(1)
+    print('setting char embedding dim to {} ...'.format(char_emb_dim))
+    char_vectors = np.random.normal(scale=0.1, size=(char_vocab_size, char_emb_dim))
+    NULL = char2idx['--NULL--']
+    OOV = char2idx['--OOV--']
+    char_vectors[NULL] = 0
+    char_vectors[OOV] = 0
+    char_vectors = torch.from_numpy(char_vectors).float()
+
     # Get model
     log.info('Building model...')
     model = BiDAF(word_vectors=word_vectors,
+                  char_vectors=char_vectors,
                   hidden_size=args.hidden_size,
                   drop_prob=args.drop_prob)
     model = nn.DataParallel(model, args.gpu_ids)
@@ -99,11 +113,15 @@ def main(args):
                 # Setup for forward
                 cw_idxs = cw_idxs.to(device)
                 qw_idxs = qw_idxs.to(device)
+                cc_idxs = cc_idxs.to(device)
+                qc_idxs = qc_idxs.to(device)
+
                 batch_size = cw_idxs.size(0)
                 optimizer.zero_grad()
 
                 # Forward
-                log_p1, log_p2 = model(cw_idxs, qw_idxs)
+                log_p1, log_p2 = model(cw_idxs, cc_idxs, qw_idxs, qc_idxs)
+
                 y1, y2 = y1.to(device), y2.to(device)
                 loss = F.nll_loss(log_p1, y1) + F.nll_loss(log_p2, y2)
                 loss_val = loss.item()
@@ -168,10 +186,12 @@ def evaluate(model, data_loader, device, eval_file, max_len, use_squad_v2):
             # Setup for forward
             cw_idxs = cw_idxs.to(device)
             qw_idxs = qw_idxs.to(device)
+            cc_idxs = cc_idxs.to(device)
+            qc_idxs = qc_idxs.to(device)
             batch_size = cw_idxs.size(0)
 
             # Forward
-            log_p1, log_p2 = model(cw_idxs, qw_idxs)
+            log_p1, log_p2 = model(cw_idxs, cc_idxs, qw_idxs, qc_idxs)
             y1, y2 = y1.to(device), y2.to(device)
             loss = F.nll_loss(log_p1, y1) + F.nll_loss(log_p2, y2)
             nll_meter.update(loss.item(), batch_size)
